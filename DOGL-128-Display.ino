@@ -1,11 +1,13 @@
 #include <Arduino.h>
 
+#include "font.h"
+
 // LCD connected Pins
-#define LCD_SI 32
-#define LCD_SCL 33
-#define LCD_A0 25
-#define LCD_CS 24
-#define LCD_RST 27
+#define LCD_SI 2
+#define LCD_SCL 3
+#define LCD_A0 4
+#define LCD_CS 5
+#define LCD_RST 6
 
 // LCD control bytes
 #define DISPLAY_ON 0xaf
@@ -19,8 +21,8 @@
 #define DISPLAY_BIAS_RATIO_ONE_SEVENTH 0xa3
 #define DISPLAY_BIAS_RATIO_ONE_NINETH 0xa2
 #define DISPLAY_INTERNAL_RESET 0xe2
-#define DISPLAY_COM_NORMAL 0xc0  // last 3 bits insignificant
-#define DISPLAY_COM_NORMAL 0xc8  // last 3 bits insignificant
+#define DISPLAY_COM_NORMAL 0xc0   // last 3 bits insignificant
+#define DISPLAY_COM_REVERSE 0xc8  // last 3 bits insignificant
 #define DISPLAY_STATIC_INDICATOR_OFF 0xac
 #define DISPLAY_STATIC_INDICATOR_ON 0xad
 #define DISPLAY_STATIC_INDICATOR_FLASHING_ON 0x01   // follows DISPLAY_STATIC_INDICATOR_OFF/ON
@@ -56,7 +58,7 @@ void setup() {
   lcd_control_byte(DISPLAY_INTERNAL_RESET);
 
   lcd_control_byte(DISPLAY_START_LINE_0);
-  lcd_control_byte(DISPLAY_ADC_NORMAL);
+  lcd_control_byte(DISPLAY_ADC_REVERSE);
   lcd_control_byte(DISPLAY_COM_NORMAL);
   lcd_control_byte(DISPLAY_DISPLAY_NORMAL);
 
@@ -68,20 +70,51 @@ void setup() {
 
   lcd_control_byte(DISPLAY_VOLTAGE_REGULATOR_SET);
   lcd_control_byte(DISPLAY_ELECTRONIC_VOLUME_SET);
-  lcd_control_byte(0x10);
+  lcd_control_byte(0x0c);
 
   lcd_control_byte(DISPLAY_STATIC_INDICATOR_OFF);
   lcd_control_byte(DISPLAY_STATIC_INDICATOR_FLASHING_OFF);
 
   lcd_control_byte(DISPLAY_ON);
   // end lcd init
+
+  lcd_clear();
+  lcd_set_pos(0, 0);
 }
 
 void loop() {
-  delay(5000);
+  delay(500);
   Serial.println();
-  lcd_set_pos(random(7), random(128));
-  lcd_data_byte(random(0xff));
+
+  lcd_set_pos(4, 20);
+  lcd_write("gehoert in");
+
+  lcd_set_pos(5, 20);
+  lcd_write("den muell");
+}
+
+void lcd_write(String str) {
+  for (uint32_t j = 0; j < str.length(); j++) {
+    boolean charDone = false;
+    for (uint8_t i = 0; i < 7 && !charDone; i++) {
+      byte b = font_standard[str.charAt(j) - 0x20][i];
+      if (b == 0xaa) {
+        lcd_data_byte(0x00);
+        charDone = true;
+      } else {
+        lcd_data_byte(b);
+      }
+    }
+  }
+}
+
+void lcd_clear() {
+  for (int i = 0; i < 8; i++) {
+    for (int j = 0; j < 128; j++) {
+      lcd_set_pos(i, j);
+      lcd_data_byte(0x00);
+    }
+  }
 }
 
 void lcd_set_pos(uint8_t row, uint8_t col) {
