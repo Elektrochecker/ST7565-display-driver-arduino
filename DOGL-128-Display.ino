@@ -12,8 +12,9 @@
 // LCD control bytes
 #define DISPLAY_ON 0xaf
 #define DISPLAY_OFF 0xae
-#define DISPLAY_ADC_NORMAL 0xa0
-#define DISPLAY_ADC_REVERSE 0xa1
+#define DISPLAY_ADC_NORMAL 0xa0   // col. address 4 - 131
+#define DISPLAY_ADC_REVERSE 0xa1  // col. address 0 - 127
+#define DISPLAY_COL_START 0       // 0 for ADC_REVERSE, 4 for ADC_NORMAL
 #define DISPLAY_DISPLAY_NORMAL 0xa6
 #define DISPLAY_DISPLAY_REVERSE 0xa7
 #define DISPLAY_ALL_POINTS_OFF 0xa4
@@ -34,11 +35,13 @@
 #define DISPLAY_START_LINE_0 0x40
 #define DISPLAY_POWER_CONTROL_BOOSTER_REGULATOR_FOLLOWER 0x2f  // 0x28 - 0x2f select internal power supply operating mode
 #define DISPLAY_VOLTAGE_REGULATOR_SET 0x27                     // 0x20 - 0x27 select voltage regulator resistor ratio
-#define DISPLAY_ELECTRONIC_VOLUME_SET 0x81                     // followed by 0x00 - 0x3f
+#define DISPLAY_ELECTRONIC_VOLUME_SET 0x81                     // followed by 0x00 - 0x3f (contrast)
 
 #define DISPLAY_SET_PAGE 0xb0              // 0xb0 - 0xbf (but only pages 0 - 7 used)
 #define DISPLAY_SET_COLUMN_MOST_SIG 0x10   // 0x10 - 0x1f
 #define DISPLAY_SET_COLUMN_LEAST_SIG 0x00  // 0x00 - 0x0f
+
+bool frameBuffer[128][64];
 
 void setup() {
   pinMode(LCD_SI, OUTPUT);
@@ -70,7 +73,7 @@ void setup() {
 
   lcd_control_byte(DISPLAY_VOLTAGE_REGULATOR_SET);
   lcd_control_byte(DISPLAY_ELECTRONIC_VOLUME_SET);
-  lcd_control_byte(0x0c);
+  lcd_control_byte(0x0b);
 
   lcd_control_byte(DISPLAY_STATIC_INDICATOR_OFF);
   lcd_control_byte(DISPLAY_STATIC_INDICATOR_FLASHING_OFF);
@@ -80,27 +83,96 @@ void setup() {
 
   lcd_clear();
   lcd_set_pos(0, 0);
+
+  clear_frame_buffer();
 }
 
 void loop() {
-  delay(500);
-  Serial.println();
+  delay(100);
 
-  lcd_set_pos(4, 20);
-  lcd_write("gehoert in");
+  // for (int j = 0; j < 64; j++) {
+  //   for (int i = 0; i < 128; i++) {
+  //     frameBuffer[j][i] = i + j == (millis() / 100) % (64 + 127);
+  //     // frameBuffer[j][i] = random(2) < 1;
+  //   }
+  // }
 
-  lcd_set_pos(5, 20);
-  lcd_write("den muell");
+  rect_filled(5, 10, 40, 40);
+  rect_hollow(20, 16, 40, 40);
+  lcd_show_frame();
+
+  // for (int j = 0; j < 8; j++) {
+  //   lcd_set_pos(j, 0);
+  //   for (int i = 0; i < 127; i++) {
+  //     lcd_data_byte(i);
+  //   }
+  // }
+}
+
+//=======================================================================
+//                DOGL LCD driver
+//=======================================================================
+
+void rect_filled(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+  for (uint8_t iy = y; iy < h + y; iy++) {
+    for (uint8_t ix = x; ix < w + x; ix++) {
+      frameBuffer[ix][iy] = 1;
+    }
+  }
+}
+
+void rect_hollow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+  for (uint8_t iy = y; iy < h + y; iy++) {
+    for (uint8_t ix = x; ix < w + x; ix++) {
+      if (ix == x || ix == x + w - 1 || iy == y || iy == y + h - 1) {
+        frameBuffer[ix][iy] = 1;
+      } else {
+        frameBuffer[ix][iy] = 0;
+      }
+    }
+  }
+}
+
+void clear_frame_buffer() {
+  for (int j = 0; j < 64; j++) {
+    for (int i = 0; i < 128; i++) {
+      frameBuffer[i][j] = 0;
+    }
+  }
+}
+
+void lcd_show_frame() {
+  uint8_t tmp[8][128];
+
+  for (uint8_t row = 0; row < 8; row++) {
+    for (uint8_t col = 0; col < 128; col++) {
+      tmp[(int)row][col] = 0;
+    }
+  }
+
+  for (uint8_t row = 0; row < 64; row++) {
+    for (uint8_t col = 0; col < 128; col++) {
+      if (frameBuffer[col][row]) {
+        tmp[(int)row / 8][col] |= (0b00000001 << (row % 8));
+      }
+    }
+  }
+
+  for (uint8_t row = 0; row < 8; row++) {
+    lcd_set_pos(row, 0);
+    for (uint8_t col = 0; col < 128; col++) {
+      lcd_data_byte(tmp[row][col]);
+    }
+  }
 }
 
 void lcd_write(String str) {
   for (uint32_t j = 0; j < str.length(); j++) {
-    boolean charDone = false;
-    for (uint8_t i = 0; i < 7 && !charDone; i++) {
+    for (uint8_t i = 0; i < 7; i++) {
       byte b = font_standard[str.charAt(j) - 0x20][i];
       if (b == 0xaa) {
         lcd_data_byte(0x00);
-        charDone = true;
+        break;
       } else {
         lcd_data_byte(b);
       }
@@ -110,14 +182,15 @@ void lcd_write(String str) {
 
 void lcd_clear() {
   for (int i = 0; i < 8; i++) {
+    lcd_set_pos(i, 0);
     for (int j = 0; j < 128; j++) {
-      lcd_set_pos(i, j);
       lcd_data_byte(0x00);
     }
   }
 }
 
 void lcd_set_pos(uint8_t row, uint8_t col) {
+  col += DISPLAY_COL_START;
   byte least_significant_col = col & 0b00001111;
   byte most_significant_col = (col & 0b11110000) >> 4;
 
@@ -143,9 +216,6 @@ void lcd_byte(boolean A0, byte byte) {
   // set A0 state (0 = display control, 1 = data)
   digitalWrite(LCD_A0, A0 ? HIGH : LOW);
 
-  Serial.print(A0 ? "1" : "0");
-  Serial.print(" ");
-
   // send byte
   for (uint16_t i = 0; i < 8; i++) {
     uint8_t signal = (byte & (0b10000000 >> i)) ? HIGH : LOW;
@@ -153,12 +223,7 @@ void lcd_byte(boolean A0, byte byte) {
     digitalWrite(LCD_SCL, LOW);
     digitalWrite(LCD_SI, signal);
     digitalWrite(LCD_SCL, HIGH);
-
-    // debug
-    Serial.print(signal);
   }
-
-  Serial.println();
 
   // disable chipselect
   digitalWrite(LCD_CS, HIGH);
