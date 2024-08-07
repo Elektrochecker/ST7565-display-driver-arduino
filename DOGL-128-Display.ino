@@ -41,7 +41,7 @@
 #define DISPLAY_SET_COLUMN_MOST_SIG 0x10   // 0x10 - 0x1f
 #define DISPLAY_SET_COLUMN_LEAST_SIG 0x00  // 0x00 - 0x0f
 
-bool frameBuffer[128][64];
+byte frameBuffer[128][8] = {0x00};
 
 void setup() {
   pinMode(LCD_SI, OUTPUT);
@@ -50,16 +50,13 @@ void setup() {
   pinMode(LCD_CS, OUTPUT);
   pinMode(LCD_RST, OUTPUT);
 
-  Serial.begin(115200);
-  Serial.println("====================");
+  // Serial.begin(115200);
 
   // initialize lcd as described in datasheet
   lcd_init();
 
   lcd_clear();
   lcd_set_pos(0, 0);
-
-  clear_frame_buffer();
 }
 
 void loop() {
@@ -71,13 +68,15 @@ void loop() {
 
   clear_frame_buffer();
 
-  rect_hollow(4, 4, width, height);
-  rect_dashed(4 + width + gap, 4, width, height, 4);
-  rect_dashed(4 + 2 * (width + gap), 4, width, height, 3);
+  rect_hollow(0, 0, 128, 64);
 
-  rect_dashed(4, 4 + height + gap, width, height);
-  rect_filled(4 + width + gap, 4 + height + gap, width, height);
-  rect_dashed(4 + 2 * (width + gap), 4 + height + gap, width, height, (millis() / 1600) % 8 + 1, (millis() / 800) % 2 > 0 ? 1 : -1);
+  rect_hollow(5, 4, width, height);
+  rect_dashed(5 + width + gap, 4, width, height, 4);
+  rect_dashed(5 + 2 * (width + gap), 4, width, height, 5, 2);
+
+  rect_filled(5, 4 + height + gap, width, height);
+  rect_dashed(5 + width + gap, 4 + height + gap, width, height);
+  rect_dashed(5 + 2 * (width + gap), 4 + height + gap, width, height, (millis() / 1600) % 8 + 2, (millis() / 800) % 2 > 0 ? 2 : -3);
 
   lcd_show_frame();
 
@@ -86,25 +85,25 @@ void loop() {
 }
 
 //=======================================================================
-//                DOGL LCD driver
+//                ST7565            DOGL LCD driver
 //=======================================================================
 
 void hline(uint16_t x, uint16_t y, uint16_t w) {
   for (uint8_t ix = x; ix < w + x; ix++) {
-    frameBuffer[ix][y] = 1;
+    framebuffer_set(ix, y, 1);
   }
 }
 
 void vline(uint16_t x, uint16_t y, uint16_t h) {
   for (uint8_t iy = y; iy < h + y; iy++) {
-    frameBuffer[x][iy] = 1;
+    framebuffer_set(x, iy, 1);
   }
 }
 
 void rect_filled(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
   for (uint8_t iy = y; iy < h + y; iy++) {
     for (uint8_t ix = x; ix < w + x; ix++) {
-      frameBuffer[ix][iy] = 1;
+      framebuffer_set(ix, iy, 1);
     }
   }
 }
@@ -113,9 +112,9 @@ void rect_hollow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
   for (uint8_t iy = y; iy < h + y; iy++) {
     for (uint8_t ix = x; ix < w + x; ix++) {
       if (ix == x || ix == x + w - 1 || iy == y || iy == y + h - 1) {
-        frameBuffer[ix][iy] = 1;
+        framebuffer_set(ix, iy, 1);
       } else {
-        frameBuffer[ix][iy] = 0;
+        framebuffer_set(ix, iy, 0);
       }
     }
   }
@@ -126,9 +125,9 @@ void rect_dashed(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t intensi
   for (uint8_t iy = y; iy < h + y; iy++) {
     for (uint8_t ix = x; ix < w + x; ix++) {
       if (ix == x || ix == x + w - 1 || iy == y || iy == y + h - 1) {
-        frameBuffer[ix][iy] = 1;
+        framebuffer_set(ix, iy, 1);
       } else {
-        frameBuffer[ix][iy] = (ix - iy) % intensity == 0;
+        framebuffer_set(ix, iy, (ix - iy) % intensity == 0);
       }
     }
   }
@@ -141,9 +140,24 @@ void rect_dashed(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t intensi
   for (uint8_t iy = y; iy < h + y; iy++) {
     for (uint8_t ix = x; ix < w + x; ix++) {
       if (ix == x || ix == x + w - 1 || iy == y || iy == y + h - 1) {
-        frameBuffer[ix][iy] = 1;
+        framebuffer_set(ix, iy, 1);
       } else {
-        frameBuffer[ix][iy] = (ix + angle * iy) % intensity == 0;
+        framebuffer_set(ix, iy, (ix + angle * iy) % intensity == 0);
+      }
+    }
+  }
+}
+
+void rect_dashed_noborder(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t intensity, int16_t angle) {
+  // best values for intensity are 2, 3, 4
+  // angle 1 normal, angle -1 flipped direction
+  // angles with absolute values greater than 1 have interesting dotted effects
+  for (uint8_t iy = y; iy < h + y; iy++) {
+    for (uint8_t ix = x; ix < w + x; ix++) {
+      if (ix == x || ix == x + w - 1 || iy == y || iy == y + h - 1) {
+        // no border
+      } else {
+        framebuffer_set(ix, iy, (ix + angle * iy) % intensity == 0);
       }
     }
   }
@@ -153,35 +167,34 @@ void rect_dashed(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
   rect_dashed(x, y, w, h, 2);
 }
 
+void framebuffer_set(uint8_t x, uint8_t y, bool state) {
+  byte b = 0x01 << (y % 8);
+
+  if (state) {
+    frameBuffer[x][(int)(y / 8)] |= b;
+  } else {
+    frameBuffer[x][(int)(y / 8)] &= ~b;
+  }
+}
+
+void framebuffer_switch(uint8_t x, uint8_t y, bool state) {
+  byte b = 0x01 << (y % 8);
+  frameBuffer[x][(int)(y / 8)] ^= b;
+}
+
 void clear_frame_buffer() {
-  for (int j = 0; j < 64; j++) {
+  for (int j = 0; j < 8; j++) {
     for (int i = 0; i < 128; i++) {
-      frameBuffer[i][j] = 0;
+      frameBuffer[i][j] = 0x00;
     }
   }
 }
 
 void lcd_show_frame() {
-  uint8_t tmp[8][128];
-
-  for (uint8_t row = 0; row < 8; row++) {
-    for (uint8_t col = 0; col < 128; col++) {
-      tmp[(int)row][col] = 0;
-    }
-  }
-
-  for (uint8_t row = 0; row < 64; row++) {
-    for (uint8_t col = 0; col < 128; col++) {
-      if (frameBuffer[col][row]) {
-        tmp[(int)row / 8][col] |= (0b00000001 << (row % 8));
-      }
-    }
-  }
-
-  for (uint8_t row = 0; row < 8; row++) {
-    lcd_set_pos(row, 0);
-    for (uint8_t col = 0; col < 128; col++) {
-      lcd_data_byte(tmp[row][col]);
+  for (int j = 0; j < 8; j++) {
+    lcd_set_pos(j, 0);
+    for (int i = 0; i < 128; i++) {
+      lcd_data_byte(frameBuffer[i][j]);
     }
   }
 }
@@ -233,7 +246,7 @@ void lcd_byte(boolean A0, byte byte) {
   // prepare clock pulse
   digitalWrite(LCD_SCL, HIGH);
 
-  // set A0 state (0 = display control, 1 = data)
+  // set A0 state (0 = display control, 1 = display memory data)
   digitalWrite(LCD_A0, A0 ? HIGH : LOW);
 
   // send byte
@@ -258,8 +271,12 @@ void lcd_init() {
 
   lcd_control_byte(DISPLAY_START_LINE_0);
   lcd_control_byte(DISPLAY_ADC_REVERSE);
+  // lcd_control_byte(DISPLAY_ADC_NORMAL);
+  // changing ADC to normal requires DISPLAY_COL_START = 4
   lcd_control_byte(DISPLAY_COM_NORMAL);
+  // lcd_control_byte(DISPLAY_COM_REVERSE);
   lcd_control_byte(DISPLAY_DISPLAY_NORMAL);
+  // lcd_control_byte(DISPLAY_DISPLAY_REVERSE);
 
   lcd_control_byte(DISPLAY_BIAS_RATIO_ONE_NINETH);
   lcd_control_byte(DISPLAY_POWER_CONTROL_BOOSTER_REGULATOR_FOLLOWER);
@@ -268,6 +285,8 @@ void lcd_init() {
   lcd_control_byte(DISPLAY_SELECT_BOOSTER_RATIO_2x3x4x);
 
   lcd_control_byte(DISPLAY_VOLTAGE_REGULATOR_SET);
+
+  // contrast
   lcd_control_byte(DISPLAY_ELECTRONIC_VOLUME_SET);
   lcd_control_byte(0x0b);
 
