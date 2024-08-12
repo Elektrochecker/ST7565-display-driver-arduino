@@ -41,17 +41,13 @@
 #define DISPLAY_SET_COLUMN_MOST_SIG 0x10   // 0x10 - 0x1f
 #define DISPLAY_SET_COLUMN_LEAST_SIG 0x00  // 0x00 - 0x0f
 
-byte frameBuffer[128][8] = {0x00};
+// size of display; each row is 8 pixels tall, each column is 1 pixel wide
+#define DISPLAY_ROW_SIZE 128
+#define DISPLAY_NUMBER_OF_ROWS 8
+
+byte frameBuffer[DISPLAY_ROW_SIZE][DISPLAY_NUMBER_OF_ROWS] = {0x00};
 
 void setup() {
-  pinMode(LCD_SI, OUTPUT);
-  pinMode(LCD_SCL, OUTPUT);
-  pinMode(LCD_A0, OUTPUT);
-  pinMode(LCD_CS, OUTPUT);
-  pinMode(LCD_RST, OUTPUT);
-
-  // Serial.begin(115200);
-
   // initialize lcd as described in datasheet
   lcd_init();
 
@@ -90,20 +86,20 @@ void loop() {
 
 void hline(uint16_t x, uint16_t y, uint16_t w) {
   for (uint8_t ix = x; ix < w + x; ix++) {
-    framebuffer_set(ix, y, 1);
+    frame_buffer_set(ix, y, 1);
   }
 }
 
 void vline(uint16_t x, uint16_t y, uint16_t h) {
   for (uint8_t iy = y; iy < h + y; iy++) {
-    framebuffer_set(x, iy, 1);
+    frame_buffer_set(x, iy, 1);
   }
 }
 
 void rect_filled(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
   for (uint8_t iy = y; iy < h + y; iy++) {
     for (uint8_t ix = x; ix < w + x; ix++) {
-      framebuffer_set(ix, iy, 1);
+      frame_buffer_set(ix, iy, 1);
     }
   }
 }
@@ -112,9 +108,9 @@ void rect_hollow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
   for (uint8_t iy = y; iy < h + y; iy++) {
     for (uint8_t ix = x; ix < w + x; ix++) {
       if (ix == x || ix == x + w - 1 || iy == y || iy == y + h - 1) {
-        framebuffer_set(ix, iy, 1);
+        frame_buffer_set(ix, iy, 1);
       } else {
-        framebuffer_set(ix, iy, 0);
+        frame_buffer_set(ix, iy, 0);
       }
     }
   }
@@ -125,9 +121,9 @@ void rect_dashed(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t intensi
   for (uint8_t iy = y; iy < h + y; iy++) {
     for (uint8_t ix = x; ix < w + x; ix++) {
       if (ix == x || ix == x + w - 1 || iy == y || iy == y + h - 1) {
-        framebuffer_set(ix, iy, 1);
+        frame_buffer_set(ix, iy, 1);
       } else {
-        framebuffer_set(ix, iy, (ix - iy) % intensity == 0);
+        frame_buffer_set(ix, iy, (ix - iy) % intensity == 0);
       }
     }
   }
@@ -140,9 +136,9 @@ void rect_dashed(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t intensi
   for (uint8_t iy = y; iy < h + y; iy++) {
     for (uint8_t ix = x; ix < w + x; ix++) {
       if (ix == x || ix == x + w - 1 || iy == y || iy == y + h - 1) {
-        framebuffer_set(ix, iy, 1);
+        frame_buffer_set(ix, iy, 1);
       } else {
-        framebuffer_set(ix, iy, (ix + angle * iy) % intensity == 0);
+        frame_buffer_set(ix, iy, (ix + angle * iy) % intensity == 0);
       }
     }
   }
@@ -157,7 +153,7 @@ void rect_dashed_noborder(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_
       if (ix == x || ix == x + w - 1 || iy == y || iy == y + h - 1) {
         // no border
       } else {
-        framebuffer_set(ix, iy, (ix + angle * iy) % intensity == 0);
+        frame_buffer_set(ix, iy, (ix + angle * iy) % intensity == 0);
       }
     }
   }
@@ -167,7 +163,8 @@ void rect_dashed(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
   rect_dashed(x, y, w, h, 2);
 }
 
-void framebuffer_set(uint8_t x, uint8_t y, bool state) {
+// set the Value of a pixel with coordinates (x, y)
+void frame_buffer_set(uint8_t x, uint8_t y, bool state) {
   byte b = 0x01 << (y % 8);
 
   if (state) {
@@ -177,23 +174,24 @@ void framebuffer_set(uint8_t x, uint8_t y, bool state) {
   }
 }
 
-void framebuffer_switch(uint8_t x, uint8_t y, bool state) {
+// change the Value of a pixel with coordinates (x, y)
+void frame_buffer_switch(uint8_t x, uint8_t y) {
   byte b = 0x01 << (y % 8);
   frameBuffer[x][(int)(y / 8)] ^= b;
 }
 
 void clear_frame_buffer() {
-  for (int j = 0; j < 8; j++) {
-    for (int i = 0; i < 128; i++) {
+  for (int j = 0; j < DISPLAY_NUMBER_OF_ROWS; j++) {
+    for (int i = 0; i < DISPLAY_ROW_SIZE; i++) {
       frameBuffer[i][j] = 0x00;
     }
   }
 }
 
 void lcd_show_frame() {
-  for (int j = 0; j < 8; j++) {
+  for (int j = 0; j < DISPLAY_NUMBER_OF_ROWS; j++) {
     lcd_set_pos(j, 0);
-    for (int i = 0; i < 128; i++) {
+    for (int i = 0; i < DISPLAY_ROW_SIZE; i++) {
       lcd_data_byte(frameBuffer[i][j]);
     }
   }
@@ -214,9 +212,9 @@ void lcd_write(String str) {
 }
 
 void lcd_clear() {
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < DISPLAY_NUMBER_OF_ROWS; i++) {
     lcd_set_pos(i, 0);
-    for (int j = 0; j < 128; j++) {
+    for (int j = 0; j < DISPLAY_ROW_SIZE; j++) {
       lcd_data_byte(0x00);
     }
   }
@@ -263,6 +261,12 @@ void lcd_byte(boolean A0, byte byte) {
 }
 
 void lcd_init() {
+  pinMode(LCD_SI, OUTPUT);
+  pinMode(LCD_SCL, OUTPUT);
+  pinMode(LCD_A0, OUTPUT);
+  pinMode(LCD_CS, OUTPUT);
+  pinMode(LCD_RST, OUTPUT);
+
   digitalWrite(LCD_CS, HIGH);
   digitalWrite(LCD_RST, LOW);
   digitalWrite(LCD_RST, HIGH);
@@ -278,6 +282,7 @@ void lcd_init() {
   lcd_control_byte(DISPLAY_DISPLAY_NORMAL);
   // lcd_control_byte(DISPLAY_DISPLAY_REVERSE);
 
+  // single supply 3.3V
   lcd_control_byte(DISPLAY_BIAS_RATIO_ONE_NINETH);
   lcd_control_byte(DISPLAY_POWER_CONTROL_BOOSTER_REGULATOR_FOLLOWER);
 
